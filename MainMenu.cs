@@ -41,6 +41,9 @@ public class MultiplayerConfig
     
     /// <summary>After lobby, this contains the lobby state with all players.</summary>
     public LobbyState? FinalLobby { get; set; }
+    
+    /// <summary>Existing server from lobby phase (to avoid "address already in use" when starting game).</summary>
+    public NetServer? ExistingServer { get; set; }
 }
 
 /// <summary>
@@ -99,7 +102,6 @@ public class MainMenu
     private string _hostIP = "127.0.0.1";
     private int _hostIPCursorPos = 9;
     private int _port = 7777;
-    private int _portCursorPos = 4;
     private bool _editingField;
     
     // Lobby state
@@ -519,7 +521,7 @@ public class MainMenu
     
     private (MenuResult, GameSettings)? HandleJoinSetupInput(InputCommand command, ConsoleKeyInfo? rawKey)
     {
-        int maxItems = 4; // Nickname, Color, IP, Connect
+        int maxItems = 5; // Nickname, Color, IP, Port, Connect
         
         if (_editingField && rawKey.HasValue)
         {
@@ -559,10 +561,35 @@ public class MainMenu
                     _hostIPCursorPos--;
                     return null;
                 }
-                if ((char.IsDigit(key.KeyChar) || key.KeyChar == '.') && _hostIP.Length < 15)
+                if ((char.IsLetterOrDigit(key.KeyChar) || key.KeyChar == '.' || key.KeyChar == ':') && _hostIP.Length < 45)
                 {
                     _hostIP = _hostIP.Insert(_hostIPCursorPos, key.KeyChar.ToString());
                     _hostIPCursorPos++;
+                    return null;
+                }
+                return null;
+            }
+            else if (_setupSelection == 3) // Editing port
+            {
+                if (key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter)
+                {
+                    _editingField = false;
+                    return null;
+                }
+                if (key.Key == ConsoleKey.Backspace && _port.ToString().Length > 0)
+                {
+                    string portStr = _port.ToString();
+                    if (portStr.Length > 1)
+                        _port = int.Parse(portStr[..^1]);
+                    else
+                        _port = 7777;
+                    return null;
+                }
+                if (char.IsDigit(key.KeyChar))
+                {
+                    string newPort = _port.ToString() + key.KeyChar;
+                    if (newPort.Length <= 5 && int.TryParse(newPort, out int p) && p <= 65535)
+                        _port = p;
                     return null;
                 }
                 return null;
@@ -583,11 +610,11 @@ public class MainMenu
                 break;
             case InputCommand.Interact:
             case InputCommand.Mine:
-                if (_setupSelection == 0 || _setupSelection == 2)
+                if (_setupSelection == 0 || _setupSelection == 2 || _setupSelection == 3)
                 {
                     _editingField = true;
                 }
-                else if (_setupSelection == 3) // Connect
+                else if (_setupSelection == 4) // Connect
                 {
                     if (string.IsNullOrWhiteSpace(_nickname))
                         _nickname = "Player";
@@ -656,6 +683,8 @@ public class MainMenu
                         _hostServer.StartGame();
                         
                         _settings.Multiplayer!.FinalLobby = _hostServer.GetLobbyState();
+                        _settings.Multiplayer!.ExistingServer = _hostServer;
+                        _hostServer = null; // Ownership transferred to Program.cs
                         return (MenuResult.MultiplayerHost, _settings);
                     }
                 }
@@ -1265,7 +1294,7 @@ public class MainMenu
     private void DrawJoinSetupMenu(int cx, int cy)
     {
         int boxW = 44;
-        int boxH = 14;
+        int boxH = 16;
         int boxX = cx - boxW / 2;
         int boxY = cy - boxH / 2;
         
@@ -1330,10 +1359,22 @@ public class MainMenu
                 _renderer.SetCell(boxX + 19 + _hostIPCursorPos, y, '▏', ConsoleColor.White);
         }
         
-        // Connect button
+        // Port field
         {
             int y = boxY + 10;
             bool selected = _setupSelection == 3;
+            bool editing = selected && _editingField;
+            string label = selected ? "▸ " : "  ";
+            _renderer.DrawString(boxX + 3, y, $"{label}Port:", selected ? ConsoleColor.White : ConsoleColor.Gray);
+            _renderer.DrawString(boxX + 18, y, $"[{_port}]", editing ? ConsoleColor.Cyan : ConsoleColor.White);
+            if (editing && _tick % 20 < 10)
+                _renderer.SetCell(boxX + 19 + _port.ToString().Length, y, '▏', ConsoleColor.White);
+        }
+        
+        // Connect button
+        {
+            int y = boxY + 12;
+            bool selected = _setupSelection == 4;
             string label = selected ? "▸ " : "  ";
             ConsoleColor color = selected ? ConsoleColor.Cyan : ConsoleColor.Gray;
             _renderer.DrawString(boxX + 3, y, $"{label}▶ Connect", color);
@@ -1342,7 +1383,7 @@ public class MainMenu
         // Show error
         if (!string.IsNullOrEmpty(_lobbyError))
         {
-            _renderer.DrawString(boxX + 3, boxY + 11, _lobbyError, ConsoleColor.Red);
+            _renderer.DrawString(boxX + 3, boxY + 13, _lobbyError, ConsoleColor.Red);
         }
         
         _renderer.DrawString(boxX + 2, boxY + boxH - 2, "Space: Edit/Connect  ←→: Color  Esc: Back", ConsoleColor.DarkGray);

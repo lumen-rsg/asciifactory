@@ -36,20 +36,23 @@ while (true)
             var mpGame = new Game(settings);
             
             var mpConfig = settings.Multiplayer!;
-            var server = new NetServer(mpConfig.Port);
-            server.Start();
-            
-            // Add all lobby players
-            if (mpConfig.FinalLobby != null)
+            var server = mpConfig.ExistingServer ?? new NetServer(mpConfig.Port);
+            if (mpConfig.ExistingServer == null)
             {
-                foreach (var lp in mpConfig.FinalLobby.Players)
+                server.Start();
+                
+                // Add all lobby players (only for fresh server)
+                if (mpConfig.FinalLobby != null)
                 {
-                    server.AddHostPlayer(new PlayerInfo
+                    foreach (var lp in mpConfig.FinalLobby.Players)
                     {
-                        Nickname = lp.Nickname,
-                        Color = lp.Color,
-                        IsHost = lp.Index == 0,
-                    });
+                        server.AddHostPlayer(new PlayerInfo
+                        {
+                            Nickname = lp.Nickname,
+                            Color = lp.Color,
+                            IsHost = lp.Index == 0,
+                        });
+                    }
                 }
             }
             
