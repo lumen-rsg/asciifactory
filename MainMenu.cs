@@ -44,6 +44,9 @@ public class MultiplayerConfig
     
     /// <summary>Existing server from lobby phase (to avoid "address already in use" when starting game).</summary>
     public NetServer? ExistingServer { get; set; }
+    
+    /// <summary>Existing client from lobby phase (to avoid reconnection when game starts).</summary>
+    public NetClient? ExistingClient { get; set; }
 }
 
 /// <summary>
@@ -274,6 +277,17 @@ public class MainMenu
             
             Update();
             Render();
+            
+            // Check if client received game start — must be in main loop,
+            // not in HandleLobbyInput, so it's detected even without key press
+            if (_screen == MenuScreen.Lobby && !_isHost && _joinClient?.GameStarted == true)
+            {
+                _settings.Multiplayer!.FinalLobby = _joinClient.LobbyState;
+                _settings.Multiplayer!.ExistingClient = _joinClient;
+                _joinClient = null; // Ownership transferred
+                return (MenuResult.MultiplayerJoin, _settings);
+            }
+            
             _tick++;
             
             Thread.Sleep(60);
@@ -703,13 +717,6 @@ public class MainMenu
                 _hostServer = null;
                 _screen = MenuScreen.Play;
                 break;
-        }
-        
-        // Check if client received game start
-        if (!_isHost && _joinClient?.GameStarted == true)
-        {
-            _settings.Multiplayer!.FinalLobby = _joinClient.LobbyState;
-            return (MenuResult.MultiplayerJoin, _settings);
         }
         
         return null;

@@ -33,6 +33,9 @@ public class NetServer : IDisposable
     /// <summary>Per-player input queues (thread-safe).</summary>
     private readonly List<List<int>> _playerInputs = new();
     
+    /// <summary>Queue of players that joined during an active game (for host to poll).</summary>
+    private readonly Queue<PendingJoin> _pendingJoins = new();
+    
     /// <summary>World seed set when game starts.</summary>
     public int WorldSeed { get; private set; }
     
@@ -47,6 +50,16 @@ public class NetServer : IDisposable
     /// <summary>
     /// Connected client data.
     /// </summary>
+    /// <summary>
+    /// Info about a player that joined during an active game.
+    /// </summary>
+    public class PendingJoin
+    {
+        public int PlayerIndex { get; set; }
+        public string Nickname { get; set; } = "Player";
+        public PlayerColor Color { get; set; }
+    }
+    
     private class ConnectedClient
     {
         public TcpClient TcpClient { get; }
@@ -188,7 +201,7 @@ public class NetServer : IDisposable
             
             lock (_lock)
             {
-                if (_lobby.Players.Count >= MaxPlayers || GameStarted)
+                if (_lobby.Players.Count >= MaxPlayers)
                 {
                     tcpClient.Close();
                     return;
@@ -204,17 +217,36 @@ public class NetServer : IDisposable
                     Index = playerIndex,
                     Nickname = info.Nickname,
                     Color = info.Color,
-                    Ready = false,
+                    Ready = GameStarted, // Auto-ready if game already running
                 });
                 
                 _playerInputs.Add(new List<int>());
             }
             
-            // Send Welcome
-            SendMessage(stream, ServerMessage.Welcome(playerIndex, 0)); // Seed sent at game start
+            // Send Welcome with player index and world seed
+            SendMessage(stream, ServerMessage.Welcome(playerIndex, WorldSeed));
             
-            // Broadcast lobby update
-            Broadcast(ServerMessage.LobbyUpdate(GetLobbyState()));
+            if (GameStarted)
+            {
+                // Late join: send GameStart immediately so client enters the game
+                SendMessage(stream, ServerMessage.GameStart(WorldSeed));
+                
+                // Enqueue for host game loop to pick up
+                lock (_lock)
+                {
+                    _pendingJoins.Enqueue(new PendingJoin
+                    {
+                        PlayerIndex = playerIndex,
+                        Nickname = info.Nickname,
+                        Color = info.Color,
+                    });
+                }
+            }
+            else
+            {
+                // Lobby phase: broadcast lobby update
+                Broadcast(ServerMessage.LobbyUpdate(GetLobbyState()));
+            }
             
             // Read loop
             while (tcpClient.Connected && IsRunning)
@@ -304,6 +336,21 @@ public class NetServer : IDisposable
             var inputs = new List<int>(_playerInputs[playerIndex]);
             _playerInputs[playerIndex].Clear();
             return inputs;
+        }
+    }
+    
+    /// <summary>
+    /// Drains and returns all pending late-join players. Thread-safe.
+    /// Called each tick by the host game loop.
+    /// </summary>
+    public List<PendingJoin> DrainPendingJoins()
+    {
+        lock (_lock)
+        {
+            var joins = new List<PendingJoin>();
+            while (_pendingJoins.Count > 0)
+                joins.Add(_pendingJoins.Dequeue());
+            return joins;
         }
     }
     

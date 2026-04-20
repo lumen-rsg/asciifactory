@@ -65,35 +65,17 @@ while (true)
         {
             Console.Clear();
             var mpConfig = settings.Multiplayer!;
-            var client = new NetClient(mpConfig.HostIP, mpConfig.Port);
             
-            var clientInfo = new PlayerInfo
-            {
-                Nickname = mpConfig.Nickname,
-                Color = mpConfig.Color,
-                IsHost = false,
-            };
-            
-            if (!client.Connect(clientInfo))
+            // Reuse existing client from lobby phase (avoids reconnection issues)
+            var client = mpConfig.ExistingClient;
+            if (client == null)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"  Failed to connect: {client.Error}");
+                Console.WriteLine("  No connection to server.");
                 Console.ResetColor();
                 Thread.Sleep(2000);
                 break;
             }
-            
-            // Wait for game start from server
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("  Connected! Waiting for host to start the game...");
-            Console.ResetColor();
-            
-            while (!client.GameStarted)
-            {
-                Thread.Sleep(100);
-            }
-            
-            mpConfig.FinalLobby = client.LobbyState;
             
             var mpGame = new Game(settings);
             mpGame.SetupMultiplayerClient(client, mpConfig);

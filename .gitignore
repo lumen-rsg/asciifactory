@@ -1,0 +1,14 @@
+## Build results
+bin/
+obj/
+
+## IDE
+.idea/
+.vs/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Save files
+save.json

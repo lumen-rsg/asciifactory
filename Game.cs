@@ -219,6 +219,7 @@ public class Game
             // Host: process remote player inputs and broadcast state
             if (_isMultiplayer && _isHost && _server != null)
             {
+                ProcessPendingJoins();
                 ProcessRemotePlayerInputs();
                 BroadcastState();
             }
@@ -1286,6 +1287,25 @@ public class Game
     }
     
     // ========== MULTIPLAYER HOST METHODS ==========
+    
+    /// <summary>
+    /// Processes players that joined during an active game (late joins).
+    /// Called each tick by the host.
+    /// </summary>
+    private void ProcessPendingJoins()
+    {
+        if (_server == null) return;
+        
+        foreach (var join in _server.DrainPendingJoins())
+        {
+            _remotePlayers.Add(new Player(0, 0)
+            {
+                PlayerIndex = join.PlayerIndex,
+                Nickname = join.Nickname,
+                PlayerColor = join.Color,
+            });
+        }
+    }
     
     /// <summary>
     /// Processes queued inputs from all remote players.
